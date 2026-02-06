@@ -82,6 +82,16 @@ export class RecordingOssService {
     };
   }
 
+  /**
+   * 生成 OSS 对象的临时读（播放）URL
+   * @param objectKey OSS 对象键
+   * @param expires 有效期（秒），默认 3600（1 小时）
+   */
+  getSignUrlForPlay(objectKey: string, expires: number = 3600): string {
+    const client = this.getClient();
+    return client.signatureUrl(objectKey, { method: 'GET', expires });
+  }
+
   /** 获取 OSS 配置（前端直传时可选：bucket、region、pathPrefix 用于展示或 STS 模式） */
   getPublicConfig() {
     return {

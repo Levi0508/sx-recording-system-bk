@@ -91,19 +91,28 @@ export class RecordingService {
 
   // 获取服务端已有的 chunk IDs
   async getUploadedChunks(sessionId: string): Promise<number[]> {
-    // 调试：先查该 sessionId 下的所有记录（不分状态）
-    const allChunks = await this.chunkRepo.find({
-      where: { sessionId },
-    });
-    console.log(
-      `[Debug] Total chunks for session ${sessionId}: ${allChunks.length}`,
-      allChunks.map((c) => ({ id: c.chunkId, status: c.status })),
-    );
-
     const chunks = await this.chunkRepo.find({
       where: { sessionId, status: 'uploaded' },
       select: ['chunkId'],
     });
     return chunks.map((c) => c.chunkId!);
+  }
+
+  /** 已完成的会话列表（用于 Explore 例音），按开始时间倒序 */
+  async getCompletedSessions(limit: number = 50) {
+    return this.sessionRepo.find({
+      where: { status: 'completed' },
+      order: { startTime: 'DESC' },
+      take: limit,
+    });
+  }
+
+  /** 某会话下所有已上传分片（含 oss_object_key、duration），按 chunkId 排序，用于生成播放 URL 列表 */
+  async getChunksWithOssKey(sessionId: string) {
+    return this.chunkRepo.find({
+      where: { sessionId, status: 'uploaded' },
+      select: ['chunkId', 'ossObjectKey', 'duration'],
+      order: { chunkId: 'ASC' },
+    });
   }
 }

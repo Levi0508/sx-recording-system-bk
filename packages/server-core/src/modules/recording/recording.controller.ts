@@ -116,12 +116,33 @@ export class RecordingController extends BaseController {
    */
   @Get('session/:sessionId/chunks')
   async getUploadedChunks(@Param('sessionId') sessionId: string) {
-    console.log(`[getUploadedChunks] Request for session: ${sessionId}`);
     const chunkIds = await this.recordingService.getUploadedChunks(sessionId);
-    console.log(
-      `[getUploadedChunks] Found ${chunkIds.length} chunks:`,
-      chunkIds,
-    );
     return this.success(chunkIds);
+  }
+
+  /**
+   * 已完成的会话列表（Explore 例音用），按开始时间倒序
+   */
+  @Get('sessions')
+  async getSessions() {
+    const list = await this.recordingService.getCompletedSessions();
+    return this.success(list);
+  }
+
+  /**
+   * 某会话的例音播放 URL 列表（分片顺序，前端按序播放即合并效果）
+   * 返回 [{ chunkId, url, duration }]，url 为 OSS 临时读链接
+   */
+  @Get('session/:sessionId/play-urls')
+  async getSessionPlayUrls(@Param('sessionId') sessionId: string) {
+    const chunks = await this.recordingService.getChunksWithOssKey(sessionId);
+    const playUrls = chunks
+      .filter((c) => c.ossObjectKey)
+      .map((c) => ({
+        chunkId: c.chunkId,
+        url: this.recordingOssService.getSignUrlForPlay(c.ossObjectKey!),
+        duration: c.duration ?? 0,
+      }));
+    return this.success(playUrls);
   }
 }
