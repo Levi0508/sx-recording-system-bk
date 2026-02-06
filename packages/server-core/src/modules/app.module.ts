@@ -19,8 +19,6 @@ import { GlobalInterceptor } from '../interceptors/global-interceptor';
 import { UserModule } from './user/user.module';
 import { PassportModule } from './passport/passport.module';
 import { PermissionModule } from './permission/permission.module';
-import { CommentModule } from './comment/comment.module';
-import { NotificationModule } from './notification/notification.module';
 
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -31,11 +29,8 @@ import { WinstonModule } from '@kazura/nestjs-winston';
 import { WinstonOptionsFactory } from './factory/winston-options-factory';
 import { NestLogger } from 'src/utils/nest-logger';
 import { MailModule } from './email/email.module';
-import { VideoModule } from './video/video.module';
-import { PayModule } from './pay/pay.module';
 import { EncryptionService } from 'src/interceptors/encryption.service';
 import { EncryptResponseInterceptor } from 'src/interceptors/encrypt-response-Interceptor';
-import { SignInModule } from './sign-in/sign-in.module';
 import { RecordingModule } from './recording/recording.module';
 
 @Module({
@@ -59,11 +54,6 @@ import { RecordingModule } from './recording/recording.module';
     PassportModule, //通行证
     PermissionModule,
     MailModule,
-    VideoModule,
-    CommentModule,
-    NotificationModule,
-    PayModule,
-    SignInModule,
     RecordingModule,
   ],
   providers: [

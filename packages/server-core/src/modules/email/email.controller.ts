@@ -49,7 +49,9 @@ export class MailController extends BaseController {
   }
 
   @Post('/sendCode/resetPassword')
-  async sendCodeWithResetPassword(@ProtocolResource() resource: CreateEmailDto) {
+  async sendCodeWithResetPassword(
+    @ProtocolResource() resource: CreateEmailDto,
+  ) {
     const email = resource.email;
     if (!email) {
       return this.error('请提供邮箱');

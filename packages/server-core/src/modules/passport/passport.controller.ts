@@ -9,7 +9,6 @@ import { WinstonService } from '@kazura/nestjs-winston';
 import { BaseController } from 'src/base/BaseController';
 import { EncryptResponse } from 'src/interceptors/encrypt-response-Interceptor';
 import { UserService } from '../user/user.service';
-import { PageDto } from './entities/dto/page';
 
 @Controller('/passport')
 export class PassportController extends BaseController {
@@ -80,8 +79,8 @@ export class PassportController extends BaseController {
         // 批量获取已购主播的更新包状态（供热门主播/所有主播列表页使用）
         purchasedAnchorUpdatePackages =
           await this.userService.getBatchAnchorUpdatePackageStatus(
-          req.__user.id,
-        );
+            req.__user.id,
+          );
       }
 
       return this.success({
@@ -110,28 +109,5 @@ export class PassportController extends BaseController {
     // 更新访问次数
     await this.passportService.updateVisitCount();
     return this.success();
-  }
-
-  /**
-   * 获取当日数据
-   * @param resource
-   * @returns
-   */
-  @Post('/get/daily_data')
-  @EncryptResponse()
-  async getDailyData(
-    @ProtocolResource()
-    resource: PageDto,
-  ) {
-    const { currentPage, pageSize } = resource;
-    const { list, totalCount } = await this.passportService.getDailyData(
-      currentPage,
-      pageSize,
-    );
-
-    return this.success({
-      list: list,
-      totalCount,
-    });
   }
 }

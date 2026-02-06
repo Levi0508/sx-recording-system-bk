@@ -10,7 +10,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { RedisService } from '@kazura/nestjs-redis';
 import { WinstonService } from '@kazura/nestjs-winston';
 import { VisitCountEntity } from './entities/visit-count.entity';
-import { ExchangeCardEntity } from '../pay/entities/exchange-card.entity';
 
 @Injectable()
 export class PassportService {
@@ -21,9 +20,6 @@ export class PassportService {
     private passportRepository: Repository<PassportEntity>,
     @InjectRepository(VisitCountEntity)
     private visitCountRepository: Repository<VisitCountEntity>,
-    @InjectRepository(ExchangeCardEntity)
-    private exchangeCardRepository: Repository<ExchangeCardEntity>,
-
     private redisService: RedisService,
     private logger: WinstonService,
   ) {}
@@ -282,24 +278,6 @@ export class PassportService {
     await this.visitCountRepository.save(visitCount);
   }
 
-  // async _incrementTotalPlayCount() {
-  //   const today = new Date().toISOString().slice(0, 10);
-
-  //   let visitCount = await this.visitCountRepository.findOneBy({
-  //     recordDate: today,
-  //   });
-
-  //   if (visitCount) {
-  //     visitCount.playTimesTotal += 1;
-  //   } else {
-  //     visitCount = this.visitCountRepository.create({
-  //       recordDate: today,
-  //       playTimesTotal: 1,
-  //     });
-  //   }
-
-  //   await this.visitCountRepository.save(visitCount);
-  // }
   async _incrementRegisterCount() {
     const today = new Date().toISOString().slice(0, 10);
 
@@ -317,49 +295,5 @@ export class PassportService {
     }
 
     await this.visitCountRepository.save(visitCount);
-  }
-
-  /**
-   * 获取当日数据
-   * @param title
-   * @returns
-   */
-
-  async getDailyData(
-    currentPage: number = 1,
-    pageSize: number = 60,
-  ): Promise<{
-    list: VisitCountEntity[];
-    totalCount: number;
-  }> {
-    // 查询总记录数
-    const totalCount = await this.visitCountRepository.count();
-
-    // 查询访问记录列表
-    const visitRecords = await this.visitCountRepository
-      .createQueryBuilder('visit_count')
-      .orderBy('visit_count.createdAt', 'DESC')
-      .skip((currentPage - 1) * pageSize)
-      .take(pageSize)
-      .getMany();
-
-    // 获取每日收入
-    const list = await Promise.all(
-      visitRecords.map(async (record) => {
-        const dailyRevenue = await this.exchangeCardRepository
-          .createQueryBuilder('exchange_card')
-          .select('SUM(exchange_card.card_type)', 'dailyRevenue')
-          .where('DATE(exchange_card.exchange_at) = DATE(:recordDate)', {
-            recordDate: record.recordDate,
-          })
-          .getRawOne();
-        return {
-          ...record,
-          dailyRevenue: dailyRevenue?.dailyRevenue || 0,
-        };
-      }),
-    );
-
-    return { list, totalCount };
   }
 }

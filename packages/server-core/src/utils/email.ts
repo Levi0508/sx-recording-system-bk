@@ -14,7 +14,7 @@ const transporter = nodemailer.createTransport({
 
 export async function sendMail(to: string, subject: string, text: string) {
   const mailOptions = {
-    from: 'Af-Share <noreply@mail.af-charizard.com>',
+    from: '<noreply@mail.af-charizard.com>',
     to: to,
     subject: subject,
     text: text,
