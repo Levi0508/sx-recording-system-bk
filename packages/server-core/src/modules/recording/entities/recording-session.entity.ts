@@ -42,4 +42,13 @@ export class RecordingSessionEntity extends BaseEntity {
     default: 'recording',
   })
   status?: string; // 'recording' | 'completed'
+
+  /** 是否使用 OSS 存储（recordings/companyId/userId/sessionId/） */
+  @Column({
+    name: 'use_oss',
+    type: 'tinyint',
+    default: 0,
+    nullable: true,
+  })
+  useOss?: number;
 }

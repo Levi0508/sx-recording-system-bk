@@ -1,0 +1,93 @@
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as AliOSS from 'ali-oss';
+
+// ali-oss 在 Node 下 ESM/CJS 互操作：default 可能不是 constructor，依次尝试 .OSS、.default、模块本身
+const _m = AliOSS as any;
+const OSSClient =
+  typeof _m.OSS === 'function'
+    ? _m.OSS
+    : typeof _m.default === 'function'
+      ? _m.default
+      : _m;
+
+/** 预签名上传返回 */
+export interface PresignUploadResult {
+  putUrl: string;
+  objectKey: string;
+  expiresAt: number;
+}
+
+/**
+ * 录音文件 OSS 直传：生成预签名 PUT URL，路径规范
+ * /recordings/{companyId}/{userId}/{sessionId}/chunk_{chunkId}.m4a
+ *
+ * 配置来源：在「运行 server-core 时的当前工作目录」下的 env/.env.local 中配置环境变量。
+ * 若在 packages/server-core 下执行 pnpm start:dev，则配置文件为 packages/server-core/env/.env.local。
+ * 所需变量见 env/.env.example 中的 OSS_* 项，值从阿里云 OSS 控制台获取（Bucket、地域、AccessKey）。
+ */
+@Injectable()
+export class RecordingOssService {
+  private client: InstanceType<typeof OSSClient> | null = null;
+
+  constructor(private readonly config: ConfigService) {}
+
+  private getClient(): InstanceType<typeof OSSClient> {
+    if (!this.client) {
+      const region = this.config.get<string>('OSS_REGION');
+      const bucket = this.config.get<string>('OSS_BUCKET');
+      const accessKeyId = this.config.get<string>('OSS_ACCESS_KEY_ID');
+      const accessKeySecret = this.config.get<string>('OSS_ACCESS_KEY_SECRET');
+      if (!region || !bucket || !accessKeyId || !accessKeySecret) {
+        throw new Error(
+          'OSS config missing: OSS_REGION, OSS_BUCKET, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET',
+        );
+      }
+      this.client = new OSSClient({
+        region,
+        bucket,
+        accessKeyId,
+        accessKeySecret,
+      });
+    }
+    return this.client;
+  }
+
+  /**
+   * 生成单个分片的预签名 PUT URL
+   * 路径：recordings/{companyId}/{sessionId}/chunk_{chunkId}.m4a（不包含 userId）
+   * @param _userId 保留参数，兼容 controller 调用，未参与路径
+   * @param sessionId 录音会话 ID
+   * @param chunkId 分片序号
+   * @param expires 有效期（秒），默认 900（15 分钟）
+   */
+  getPresignPutUrl(
+    _userId: number,
+    sessionId: string,
+    chunkId: number,
+    expires: number = 900,
+  ): PresignUploadResult {
+    const companyId = this.config.get<string>('OSS_COMPANY_ID') || 'default';
+    const objectKey = `recordings/${companyId}/${sessionId}/chunk_${chunkId}.m4a`;
+    const client = this.getClient();
+    const putUrl = client.signatureUrl(objectKey, {
+      method: 'PUT',
+      expires,
+      'Content-Type': 'audio/mp4',
+    });
+    return {
+      putUrl,
+      objectKey,
+      expiresAt: Math.floor(Date.now() / 1000) + expires,
+    };
+  }
+
+  /** 获取 OSS 配置（前端直传时可选：bucket、region、pathPrefix 用于展示或 STS 模式） */
+  getPublicConfig() {
+    return {
+      region: this.config.get<string>('OSS_REGION'),
+      bucket: this.config.get<string>('OSS_BUCKET'),
+      companyId: this.config.get<string>('OSS_COMPANY_ID') || 'default',
+    };
+  }
+}

@@ -1,102 +1,127 @@
-import {
-  Body,
-  Controller,
-  Get,
-  Param,
-  Post,
-  UploadedFile,
-  UseInterceptors,
-} from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { Controller, Get, Param, Post } from '@nestjs/common';
 import { BaseController } from 'src/base/BaseController';
 import { CreateSessionDTO } from './dtos/create-session.dto';
-import { UploadChunkDTO } from './dtos/upload-chunk.dto';
-import { CompleteSessionDTO } from './dtos/complete-session.dto';
+import { CompleteSessionOssDto } from './dtos/complete-session-oss.dto';
+import { PresignUploadDto } from './dtos/presign-upload.dto';
 import { ProtocolResource } from 'src/decorators/protocol-resource';
-import * as fs from 'fs';
-import * as path from 'path';
 import { RecordingService } from './recording.service';
+import { RecordingOssService } from './recording-oss.service';
+import { ReqUser } from 'src/decorators/req-user';
+import { UserEntity } from '../user/entities/user.entity';
+import { ServiceException } from 'src/common/ServiceException';
 
 @Controller('recording')
 export class RecordingController extends BaseController {
-  constructor(private readonly recordingService: RecordingService) {
+  constructor(
+    private readonly recordingService: RecordingService,
+    private readonly recordingOssService: RecordingOssService,
+  ) {
     super();
   }
 
+  /**
+   * OSS 直传：获取单个分片的预签名 PUT URL
+   * 前端直传 OSS 前调用，按 sessionId + chunkId 换取该分片的 PUT 地址与 headers，需登录、走协议体
+   */
+  @Post('oss/presign-upload')
+  async getPresignUploadUrl(
+    @ReqUser(true) user: UserEntity,
+    @ProtocolResource() resource: PresignUploadDto,
+  ) {
+    const userId = user?.id != null ? Number(user.id) : NaN;
+    if (!Number.isFinite(userId)) {
+      throw new ServiceException('用户信息无效，请重新登录', -101);
+    }
+    const sessionId =
+      typeof resource?.sessionId === 'string' ? resource.sessionId.trim() : '';
+    const chunkId =
+      typeof resource?.chunkId === 'number'
+        ? resource.chunkId
+        : Number(resource?.chunkId);
+    if (!sessionId || !Number.isFinite(chunkId) || chunkId < 0) {
+      throw new ServiceException('sessionId 或 chunkId 无效', 400);
+    }
+    try {
+      const result = this.recordingOssService.getPresignPutUrl(
+        userId,
+        sessionId,
+        chunkId,
+      );
+      return this.success(result);
+    } catch (e: any) {
+      console.error('[presign-upload]', e?.message || e);
+      throw new ServiceException(
+        e?.message || '获取上传地址失败',
+        e?.statusCode ?? 500,
+      );
+    }
+  }
+
+  /**
+   * 创建录音会话
+   * Pad 端开始一次面对面讲解时调用，写入 sessionId、客户名、开始时间，返回创建的会话信息。走协议体时从 resource 解出参数。
+   */
   @Post('session')
-  async createSession(@Body() dto: CreateSessionDTO) {
+  async createSession(@ProtocolResource() resource: CreateSessionDTO) {
+    const sessionId =
+      typeof resource?.sessionId === 'string' ? resource.sessionId.trim() : '';
+    const startTime =
+      typeof resource?.startTime === 'number'
+        ? resource.startTime
+        : Number(resource?.startTime);
+    if (!sessionId) {
+      throw new ServiceException('sessionId 不能为空', 400);
+    }
+    if (!Number.isFinite(startTime)) {
+      throw new ServiceException('startTime 必须为有效数字', 400);
+    }
+    const dto: CreateSessionDTO = {
+      sessionId,
+      clientName:
+        typeof resource?.clientName === 'string'
+          ? resource.clientName.trim()
+          : undefined,
+      startTime,
+    };
     const result = await this.recordingService.createSession(dto);
     return this.success(result);
   }
 
-  @Post('chunk')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: (req, file, cb) => {
-          // 临时存放目录，Service 层会移动到最终目录
-          // 使用 process.cwd() 确保路径一致
-          const tempDir = path.join(process.cwd(), 'uploads', 'temp');
-          if (!fs.existsSync(tempDir)) {
-            fs.mkdirSync(tempDir, { recursive: true });
-          }
-          cb(null, tempDir);
-        },
-        filename: (req, file, cb) => {
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          cb(
-            null,
-            file.fieldname +
-              '-' +
-              uniqueSuffix +
-              path.extname(file.originalname),
-          );
-        },
-      }),
-    }),
-  )
-  async uploadChunk(
-    @UploadedFile() file: Express.Multer.File,
-    @Body() body: UploadChunkDTO, // 不使用 @ProtocolResource，因为它只支持 JSON 且有格式校验
-  ) {
-    if (!file) {
-      throw new Error('File is required');
-    }
-
-    // 手动处理类型转换 (multipart/form-data 传输过来通常是 string)
-    let sessionId = body.sessionId?.trim();
-    
-    // 严格校验 sessionId，防止前端传 "undefined", "null" 或空字符串
-    if (!sessionId || sessionId === 'undefined' || sessionId === 'null') {
-      console.error('[uploadChunk] Invalid sessionId:', body.sessionId);
-      throw new Error(`Invalid sessionId: ${body.sessionId}`);
-    }
-
-    const dto: UploadChunkDTO = {
-      sessionId,
-      chunkId: Number(body.chunkId),
-      duration: Number(body.duration),
-    };
-
-    console.log(`[uploadChunk] Processing: sessionId=[${dto.sessionId}], chunkId=${dto.chunkId}`);
-
-    const result = await this.recordingService.handleChunkUpload(dto, file);
-    return this.success(result);
-  }
-
+  /**
+   * 结束录音会话
+   * 传 chunks 数组，按 OSS 分片落库并标记会话完成；走协议体
+   */
   @Post('complete')
-  async completeSession(@Body() dto: CompleteSessionDTO) {
-    const result = await this.recordingService.completeSession(dto.sessionId!);
+  async completeSession(@ProtocolResource() dto: CompleteSessionOssDto) {
+    const sessionId = dto.sessionId!;
+    if (dto.chunks && dto.chunks.length > 0) {
+      const result = await this.recordingService.completeSessionWithOssChunks(
+        sessionId,
+        dto.chunks.map((c) => ({
+          chunkId: c.chunkId,
+          objectKey: c.objectKey,
+          size: c.size,
+          duration: c.duration,
+        })),
+      );
+      return this.success(result);
+    }
+    const result = await this.recordingService.completeSession(sessionId);
     return this.success(result);
   }
 
+  /**
+   * 查询某次会话已上传的分片 ID 列表
+   * 用于前端断点续传：根据已存在的 chunkId 决定哪些分片需要重传或跳过
+   */
   @Get('session/:sessionId/chunks')
   async getUploadedChunks(@Param('sessionId') sessionId: string) {
     console.log(`[getUploadedChunks] Request for session: ${sessionId}`);
     const chunkIds = await this.recordingService.getUploadedChunks(sessionId);
-    console.log(`[getUploadedChunks] Found ${chunkIds.length} chunks:`, chunkIds);
+    console.log(
+      `[getUploadedChunks] Found ${chunkIds.length} chunks:`,
+      chunkIds,
+    );
     return this.success(chunkIds);
   }
 }

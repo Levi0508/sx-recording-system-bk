@@ -34,6 +34,15 @@ export class RecordingChunkEntity extends BaseEntity {
   })
   filePath?: string;
 
+  /** OSS 直传时的 Object Key，与 filePath 二选一 */
+  @Column({
+    name: 'oss_object_key',
+    type: 'varchar',
+    length: 512,
+    nullable: true,
+  })
+  ossObjectKey?: string;
+
   @Column({
     name: 'status',
     type: 'varchar',
