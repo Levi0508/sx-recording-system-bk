@@ -290,7 +290,9 @@ export class UserController extends BaseController {
     }
     await this.passportService._incrementRegisterCount();
     //活动相关 《结束》显示
-    return this.success();
+    return this.success({
+      message: '注册成功',
+    });
   }
 
   /**

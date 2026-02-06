@@ -1,13 +1,13 @@
-import { Controller, Post, Body, Inject } from '@nestjs/common';
+import { Controller, Post, Inject } from '@nestjs/common';
 import { CreateEmailDto } from './dto/create-email.dto';
 import { MailService } from './email.service';
-import { ProtocolResource } from 'src/decorators/protocol-resource';
 
 import { generateCode } from 'src/utils';
 import { BaseController } from 'src/base/BaseController';
 import { UserService } from '../user/user.service';
 import { RedisService } from '@kazura/nestjs-redis';
 import { ServiceException } from 'src/common/ServiceException';
+import { ProtocolResource } from 'src/decorators/protocol-resource';
 
 @Controller('/email')
 export class MailController extends BaseController {
@@ -20,7 +20,10 @@ export class MailController extends BaseController {
 
   @Post('/sendCode/register')
   async sendCodeWidthRegister(@ProtocolResource() resource: CreateEmailDto) {
-    const { email } = resource;
+    const email = resource.email;
+    if (!email) {
+      return this.error('请提供邮箱');
+    }
 
     const user = await this.userService.findOneByEmail(email);
 
@@ -46,10 +49,11 @@ export class MailController extends BaseController {
   }
 
   @Post('/sendCode/resetPassword')
-  async sendCodeWithResetPassword(
-    @ProtocolResource() resource: CreateEmailDto,
-  ) {
-    const { email } = resource;
+  async sendCodeWithResetPassword(@ProtocolResource() resource: CreateEmailDto) {
+    const email = resource.email;
+    if (!email) {
+      return this.error('请提供邮箱');
+    }
 
     const user = await this.userService.findOneByEmail(email);
     if (!user) {
