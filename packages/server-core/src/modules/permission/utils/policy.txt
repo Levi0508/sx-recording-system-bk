@@ -1,0 +1,14 @@
+policy = {
+    <statement_block>
+}
+
+<statement_block> = "statement" : [ <statement>, <statement>, ... ]
+
+<statement> = {
+    <effect_block>,
+    <action_block>,
+}
+
+<effect_block> = "effect" : ("Allow" | "Deny")  
+
+<action_block> = "action" : [ <action_string>, <action_string>, ... ]

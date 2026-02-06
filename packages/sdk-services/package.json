@@ -1,0 +1,33 @@
+{
+  "name": "@af-charizard/sdk-services",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "clean": "rimraf dist",
+    "build": "pnpm g:index & pnpm clean & komekko",
+    "generate:index": "tsx src/cli/generate-index.ts",
+    "g:index": "tsx src/cli/generate-index.ts"
+  },
+  "dependencies": {
+    "@kazura/http-client": "^0.0.2",
+    "@kazura/web-crypto": "^3.1.1",
+    "@kazura/web-util": "^2.1.0",
+    "@kazura/vite-config": "^0.0.2",
+    "@af-charizard/sdk-commons": "workspace:*",
+    "@af-charizard/sdk-utils": "workspace:*",
+    "@af-charizard/sdk-types": "workspace:*",
+    "axios": "^1.7.5",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "komekko": "^0.2.0",
+    "tslib": "^2.7.0",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=20.17.0"
+  }
+}

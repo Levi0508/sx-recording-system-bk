@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "packageManager": "pnpm@9.9.0",
+  "scripts": {
+    "clean:sdk": "pnpm -r --filter=./packages/sdk* run clean",
+    "build:sdk": "pnpm -r --filter=./packages/sdk* run build",
+    "project:build:development": "pnpm clean:sdk && pnpm build:sdk && pnpm -r --filter=./packages/project* run build:development",
+    "project:build:testing": "pnpm clean:sdk && pnpm build:sdk && pnpm -r --filter=./packages/project* run build:testing",
+    "project:build:production": "pnpm clean:sdk && pnpm build:sdk && pnpm -r --filter=./packages/project* run build:production",
+    "sync:anchor-prices": "node scripts/sync-anchor-prices.js",
+    "sync:anchor-prices-backend": "node scripts/sync-anchor-prices-backend.js",
+    "generate:anchor-goods-map": "node scripts/generate-anchor-goods-map.js"
+  }
+}
