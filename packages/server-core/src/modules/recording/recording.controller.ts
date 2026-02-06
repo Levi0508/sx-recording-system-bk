@@ -121,7 +121,8 @@ export class RecordingController extends BaseController {
   }
 
   /**
-   * 已完成的会话列表（Explore 例音用），按开始时间倒序
+   * 已完成的会话列表（Explore 例音用）
+   * 返回 status=completed 的会话，按 startTime 倒序，供前端展示例音列表
    */
   @Get('sessions')
   async getSessions() {
@@ -131,7 +132,8 @@ export class RecordingController extends BaseController {
 
   /**
    * 某会话的例音播放 URL 列表（分片顺序，前端按序播放即合并效果）
-   * 返回 [{ chunkId, url, duration }]，url 为 OSS 临时读链接
+   * 从 DB 取该会话下已上传分片的 oss_object_key，逐个生成 OSS 临时读链接
+   * 返回 [{ chunkId, url, duration }]，按 chunkId 升序
    */
   @Get('session/:sessionId/play-urls')
   async getSessionPlayUrls(@Param('sessionId') sessionId: string) {

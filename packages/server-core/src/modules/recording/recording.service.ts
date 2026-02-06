@@ -14,6 +14,10 @@ export class RecordingService {
     private readonly chunkRepo: Repository<RecordingChunkEntity>,
   ) {}
 
+  /**
+   * 创建录音会话（幂等：同一 sessionId 已存在则直接返回）
+   * 写入 sessionId、clientName、startTime，状态为 recording
+   */
   async createSession(dto: CreateSessionDTO) {
     // 幂等处理：如果已存在同名 sessionId，直接返回（或更新）
     let session = await this.sessionRepo.findOneBy({
@@ -30,6 +34,9 @@ export class RecordingService {
     return session;
   }
 
+  /**
+   * 结束会话：将会话状态设为 completed，并汇总该会话下所有分片 duration 写入 totalDuration
+   */
   async completeSession(sessionId: string) {
     const session = await this.sessionRepo.findOneBy({ sessionId });
     if (session) {
@@ -89,7 +96,10 @@ export class RecordingService {
     return this.completeSession(sessionId);
   }
 
-  // 获取服务端已有的 chunk IDs
+  /**
+   * 获取某会话已上传分片的 chunkId 列表
+   * 用于前端断点续传：根据已存在的 chunkId 决定哪些分片需要重传或跳过
+   */
   async getUploadedChunks(sessionId: string): Promise<number[]> {
     const chunks = await this.chunkRepo.find({
       where: { sessionId, status: 'uploaded' },
@@ -98,7 +108,11 @@ export class RecordingService {
     return chunks.map((c) => c.chunkId!);
   }
 
-  /** 已完成的会话列表（用于 Explore 例音），按开始时间倒序 */
+  /**
+   * 已完成的会话列表（用于 Explore 例音）
+   * @param limit 最多返回条数，默认 50
+   * @returns 按 startTime 倒序的会话实体列表
+   */
   async getCompletedSessions(limit: number = 50) {
     return this.sessionRepo.find({
       where: { status: 'completed' },
@@ -107,7 +121,10 @@ export class RecordingService {
     });
   }
 
-  /** 某会话下所有已上传分片（含 oss_object_key、duration），按 chunkId 排序，用于生成播放 URL 列表 */
+  /**
+   * 某会话下所有已上传分片（含 oss_object_key、duration）
+   * 按 chunkId 升序，供生成例音播放 URL 列表（GET play-urls）
+   */
   async getChunksWithOssKey(sessionId: string) {
     return this.chunkRepo.find({
       where: { sessionId, status: 'uploaded' },

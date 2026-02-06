@@ -32,6 +32,7 @@ export class RecordingOssService {
 
   constructor(private readonly config: ConfigService) {}
 
+  /** 懒加载 OSS 客户端，从 ConfigService 读取 OSS_* 环境变量 */
   private getClient(): InstanceType<typeof OSSClient> {
     if (!this.client) {
       const region = this.config.get<string>('OSS_REGION');
@@ -84,8 +85,10 @@ export class RecordingOssService {
 
   /**
    * 生成 OSS 对象的临时读（播放）URL
-   * @param objectKey OSS 对象键
-   * @param expires 有效期（秒），默认 3600（1 小时）
+   * 用于 Explore 例音播放、下载等需要临时访问私有对象的场景
+   * @param objectKey OSS 对象键（如 recordings/default/{sessionId}/chunk_1.m4a）
+   * @param expires 链接有效期（秒），默认 3600（1 小时）
+   * @returns 带签名的 GET URL，前端可直接用于 Audio 播放或下载
    */
   getSignUrlForPlay(objectKey: string, expires: number = 3600): string {
     const client = this.getClient();
