@@ -2,6 +2,7 @@ import { Controller, Get, Param, Post } from '@nestjs/common';
 import { BaseController } from 'src/base/BaseController';
 import { CreateSessionDTO } from './dtos/create-session.dto';
 import { CompleteSessionOssDto } from './dtos/complete-session-oss.dto';
+import { ConfirmChunkDto } from './dtos/confirm-chunk.dto';
 import { PresignUploadDto } from './dtos/presign-upload.dto';
 import { ProtocolResource } from 'src/decorators/protocol-resource';
 import { RecordingService } from './recording.service';
@@ -89,24 +90,84 @@ export class RecordingController extends BaseController {
 
   /**
    * 结束录音会话
-   * 传 chunks 数组，按 OSS 分片落库并标记会话完成；走协议体
+   * 传 chunks 数组时，先对每个分片做 OSS 存在性及大小校验，通过后再落库并标记会话完成；走协议体
    */
   @Post('complete')
   async completeSession(@ProtocolResource() dto: CompleteSessionOssDto) {
     const sessionId = dto.sessionId!;
     if (dto.chunks && dto.chunks.length > 0) {
-      const result = await this.recordingService.completeSessionWithOssChunks(
-        sessionId,
-        dto.chunks.map((c) => ({
-          chunkId: c.chunkId,
-          objectKey: c.objectKey,
-          size: c.size,
-          duration: c.duration,
-        })),
-      );
-      return this.success(result);
+      try {
+        const result = await this.recordingService.completeSessionWithOssChunks(
+          sessionId,
+          dto.chunks.map((c) => ({
+            chunkId: c.chunkId,
+            objectKey: c.objectKey,
+            size: c.size,
+            duration: c.duration,
+          })),
+        );
+        return this.success(result);
+      } catch (e: any) {
+        const msg = e?.message || '完成会话失败';
+        throw new ServiceException(msg, 400);
+      }
     }
     const result = await this.recordingService.completeSession(sessionId);
+    return this.success(result);
+  }
+
+  /**
+   * 补传分片确认（方案 A：补传成功 → 回调校验 → 落库）
+   * 会话已 completed 后，客户端补传成功时调用此接口；服务端 headObject 校验通过后落库该分片并更新 totalDuration
+   */
+  @Post('session/:sessionId/confirm-chunk')
+  async confirmChunk(
+    @Param('sessionId') sessionId: string,
+    @ProtocolResource() resource: ConfirmChunkDto,
+  ) {
+    const chunkId =
+      typeof resource?.chunkId === 'number'
+        ? resource.chunkId
+        : Number(resource?.chunkId);
+    const objectKey =
+      typeof resource?.objectKey === 'string' ? resource.objectKey.trim() : '';
+    const size =
+      typeof resource?.size === 'number'
+        ? resource.size
+        : Number(resource?.size);
+    const duration =
+      typeof resource?.duration === 'number'
+        ? resource.duration
+        : Number(resource?.duration);
+    if (!objectKey || !Number.isFinite(chunkId) || chunkId < 0) {
+      throw new ServiceException('objectKey 或 chunkId 无效', 400);
+    }
+    if (!Number.isFinite(size) || size < 0) {
+      throw new ServiceException('size 无效', 400);
+    }
+    try {
+      await this.recordingService.appendChunks(sessionId, [
+        {
+          chunkId,
+          objectKey,
+          size,
+          duration: Number.isFinite(duration) ? duration : 0,
+        },
+      ]);
+      return this.success({ ok: true });
+    } catch (e: any) {
+      const msg = e?.message || '分片确认落库失败';
+      throw new ServiceException(msg, 400);
+    }
+  }
+
+  /**
+   * 补救：对会话下所有 pending 分片做 headObject，通过则改为 uploaded。
+   * 网络恢复 / 前端启动时调用，使“已在 OSS 但 complete 时未校验到”的文件落库。
+   */
+  @Post('session/:sessionId/check-pending')
+  async checkPending(@Param('sessionId') sessionId: string) {
+    const result = await this.recordingService.checkPendingChunks(sessionId);
     return this.success(result);
   }
 

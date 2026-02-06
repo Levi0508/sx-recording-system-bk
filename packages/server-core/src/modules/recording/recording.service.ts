@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { RecordingSessionEntity } from './entities/recording-session.entity';
 import { RecordingChunkEntity } from './entities/recording-chunk.entity';
 import { CreateSessionDTO } from './dtos/create-session.dto';
+import { RecordingOssService } from './recording-oss.service';
 
 @Injectable()
 export class RecordingService {
@@ -12,6 +13,7 @@ export class RecordingService {
     private readonly sessionRepo: Repository<RecordingSessionEntity>,
     @InjectRepository(RecordingChunkEntity)
     private readonly chunkRepo: Repository<RecordingChunkEntity>,
+    private readonly recordingOssService: RecordingOssService,
   ) {}
 
   /**
@@ -35,7 +37,7 @@ export class RecordingService {
   }
 
   /**
-   * 结束会话：将会话状态设为 completed，并汇总该会话下所有分片 duration 写入 totalDuration
+   * 结束会话：将会话状态设为 completed，并汇总该会话下已校验通过（status=uploaded）分片的 duration 写入 totalDuration
    */
   async completeSession(sessionId: string) {
     const session = await this.sessionRepo.findOneBy({ sessionId });
@@ -45,6 +47,7 @@ export class RecordingService {
         .createQueryBuilder('chunk')
         .select('SUM(chunk.duration)', 'sum')
         .where('chunk.sessionId = :sessionId', { sessionId })
+        .andWhere('chunk.status = :status', { status: 'uploaded' })
         .getRawOne();
 
       session.totalDuration = sum || 0;
@@ -54,8 +57,8 @@ export class RecordingService {
   }
 
   /**
-   * OSS 直传模式：前端上传完成后提交分片列表，后端落库并完成会话。
-   * 若会话不存在则先创建，避免仅走 OSS 未调 createSession 时 complete 无效。
+   * OSS 直传模式：complete 时客户端上报全部 expectedFiles。
+   * 对每个 objectKey 做 OSS head 校验：通过 → status=uploaded 落库；不通过（不存在/断网）→ status=pending 落库，留待补救。
    */
   async completeSessionWithOssChunks(
     sessionId: string,
@@ -90,10 +93,62 @@ export class RecordingService {
       }
       chunk.ossObjectKey = c.objectKey;
       chunk.duration = c.duration;
-      chunk.status = 'uploaded';
+      try {
+        await this.recordingOssService.assertObjectExistsAndSize(
+          c.objectKey,
+          c.size,
+        );
+        chunk.status = 'uploaded';
+      } catch {
+        chunk.status = 'pending';
+      }
       await this.chunkRepo.save(chunk);
     }
     return this.completeSession(sessionId);
+  }
+
+  /**
+   * 补救：对某会话下所有 status=pending 的分片做 headObject，通过则改为 uploaded 并更新 totalDuration。
+   * 用于网络恢复后，使“已在 OSS 但 complete 时未校验到”的文件落库。
+   */
+  async checkPendingChunks(sessionId: string): Promise<{ updated: number }> {
+    const pending = await this.chunkRepo.find({
+      where: { sessionId, status: 'pending' },
+      select: ['chunkId', 'ossObjectKey', 'duration'],
+    });
+    if (pending.length === 0) return { updated: 0 };
+
+    let updated = 0;
+    for (const c of pending) {
+      if (!c.ossObjectKey) continue;
+      try {
+        await this.recordingOssService.assertObjectExistsAndSize(
+          c.ossObjectKey,
+          undefined,
+        );
+        await this.chunkRepo.update(
+          { sessionId, chunkId: c.chunkId },
+          { status: 'uploaded' },
+        );
+        updated++;
+      } catch {
+        // 仍不可达，保持 pending
+      }
+    }
+    if (updated > 0) {
+      const session = await this.sessionRepo.findOneBy({ sessionId });
+      if (session) {
+        const { sum } = await this.chunkRepo
+          .createQueryBuilder('chunk')
+          .select('SUM(chunk.duration)', 'sum')
+          .where('chunk.sessionId = :sessionId', { sessionId })
+          .andWhere('chunk.status = :status', { status: 'uploaded' })
+          .getRawOne();
+        session.totalDuration = sum || 0;
+        await this.sessionRepo.save(session);
+      }
+    }
+    return { updated };
   }
 
   /**
@@ -119,6 +174,55 @@ export class RecordingService {
       order: { startTime: 'DESC' },
       take: limit,
     });
+  }
+
+  /**
+   * 补传落库：会话已 completed 后，后续上传成功的分片通过此方法落库。
+   * 对每个 chunk 做 OSS head 校验存在与 size，通过后写入 chunk 表并更新会话 totalDuration；不改变会话 status。
+   */
+  async appendChunks(
+    sessionId: string,
+    chunks: {
+      chunkId: number;
+      objectKey: string;
+      size: number;
+      duration: number;
+    }[],
+  ) {
+    if (chunks.length === 0) return;
+    for (const c of chunks) {
+      await this.recordingOssService.assertObjectExistsAndSize(
+        c.objectKey,
+        c.size,
+      );
+    }
+    const session = await this.sessionRepo.findOneBy({ sessionId });
+    if (!session) {
+      throw new Error('会话不存在');
+    }
+
+    for (const c of chunks) {
+      let chunk = await this.chunkRepo.findOneBy({
+        sessionId,
+        chunkId: c.chunkId,
+      });
+      if (!chunk) {
+        chunk = new RecordingChunkEntity();
+        chunk.sessionId = sessionId;
+        chunk.chunkId = c.chunkId;
+      }
+      chunk.ossObjectKey = c.objectKey;
+      chunk.duration = c.duration;
+      chunk.status = 'uploaded';
+      await this.chunkRepo.save(chunk);
+    }
+    const { sum } = await this.chunkRepo
+      .createQueryBuilder('chunk')
+      .select('SUM(chunk.duration)', 'sum')
+      .where('chunk.sessionId = :sessionId', { sessionId })
+      .getRawOne();
+    session.totalDuration = sum || 0;
+    await this.sessionRepo.save(session);
   }
 
   /**

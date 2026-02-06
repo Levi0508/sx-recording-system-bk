@@ -84,6 +84,44 @@ export class RecordingOssService {
   }
 
   /**
+   * 校验 OSS 对象是否存在，并可选校验大小（用于 complete 前可信校验）
+   * @param objectKey OSS 对象键
+   * @param expectedSize 期望的字节数，若传入则与 OSS 返回的 content-length 比对（一致才通过）
+   * @returns 存在且大小一致时返回 { size }，不存在或大小不一致时抛错
+   */
+  async assertObjectExistsAndSize(
+    objectKey: string,
+    expectedSize?: number,
+  ): Promise<{ size: number }> {
+    const client = this.getClient();
+    try {
+      const result = await client.head(objectKey);
+      const headers =
+        result.res?.headers || result.res?.response?.headers || {};
+      const contentLength =
+        headers['content-length'] ?? headers['Content-Length'];
+      const size =
+        contentLength != null ? parseInt(String(contentLength), 10) : 0;
+      if (
+        expectedSize != null &&
+        !Number.isNaN(expectedSize) &&
+        size !== expectedSize
+      ) {
+        throw new Error(
+          `OSS 对象大小不一致: objectKey=${objectKey}, 期望=${expectedSize}, 实际=${size}`,
+        );
+      }
+      return { size };
+    } catch (e: any) {
+      const code = e?.code ?? e?.name;
+      if (code === 'NoSuchKey' || e?.status === 404) {
+        throw new Error(`OSS 对象不存在: ${objectKey}`);
+      }
+      throw e;
+    }
+  }
+
+  /**
    * 生成 OSS 对象的临时读（播放）URL
    * 用于 Explore 例音播放、下载等需要临时访问私有对象的场景
    * @param objectKey OSS 对象键（如 recordings/default/{sessionId}/chunk_1.m4a）
