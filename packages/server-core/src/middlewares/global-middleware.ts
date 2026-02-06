@@ -97,6 +97,17 @@ export class GlobalMiddleware implements NestMiddleware {
       return passport;
     }
 
+    // 兜底：从 Authorization Bearer 或 header token 取（与前端 request 拦截器里的 auth.token 一致）
+    // const authHeader = request.headers['authorization'];
+    // if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    //   const token = authHeader.slice(7).trim();
+    //   if (token) return token;
+    // }
+    // const headerToken = request.headers['token'];
+    // if (typeof headerToken === 'string' && headerToken.trim()) {
+    //   return headerToken.trim();
+    // }
+
     // 否则返回null
     this.logger.info('NestMiddleware->getPassportFromRequest', {
       contentType,

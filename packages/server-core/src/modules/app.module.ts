@@ -32,6 +32,7 @@ import { MailModule } from './email/email.module';
 import { EncryptionService } from 'src/interceptors/encryption.service';
 import { EncryptResponseInterceptor } from 'src/interceptors/encrypt-response-Interceptor';
 import { RecordingModule } from './recording/recording.module';
+import { ReceptionModule } from './reception/reception.module';
 
 @Module({
   imports: [
@@ -55,6 +56,7 @@ import { RecordingModule } from './recording/recording.module';
     PermissionModule,
     MailModule,
     RecordingModule,
+    ReceptionModule,
   ],
   providers: [
     {
@@ -127,6 +129,14 @@ export class AppModule {
         validateCustomDecorators: true, //启用自定义装饰器的验证
       }),
     );
+
+    // 根路径用于浏览器访问验证：打开 http://IP:4000 可见服务是否运行
+    const expressApp = app.getHttpAdapter().getInstance?.();
+    if (expressApp && typeof expressApp.get === 'function') {
+      expressApp.get('/', (_req, res) =>
+        res.json({ status: 'ok', message: 'API 服务运行中' }),
+      );
+    }
 
     await app.listen(parseInt(process.env.SERVER_PORT || '4000', 10));
   }
