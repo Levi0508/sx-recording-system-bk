@@ -33,6 +33,7 @@ import { EncryptionService } from 'src/interceptors/encryption.service';
 import { EncryptResponseInterceptor } from 'src/interceptors/encrypt-response-Interceptor';
 import { RecordingModule } from './recording/recording.module';
 import { ReceptionModule } from './reception/reception.module';
+import { AnalysisModule } from './analysis/analysis.module';
 
 @Module({
   imports: [
@@ -57,6 +58,7 @@ import { ReceptionModule } from './reception/reception.module';
     MailModule,
     RecordingModule,
     ReceptionModule,
+    AnalysisModule,
   ],
   providers: [
     {

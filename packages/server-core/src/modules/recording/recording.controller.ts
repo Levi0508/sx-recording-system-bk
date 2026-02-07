@@ -7,7 +7,7 @@ import { PresignUploadDto } from './dtos/presign-upload.dto';
 import { ProtocolResource } from 'src/decorators/protocol-resource';
 import { RecordingService } from './recording.service';
 import { RecordingOssService } from './recording-oss.service';
-import { AnalysisTaskService } from './analysis-task.service';
+import { AnalysisTaskService } from '../analysis/analysis-task.service';
 import { ReqUser } from 'src/decorators/req-user';
 import { UserEntity } from '../user/entities/user.entity';
 import { ServiceException } from 'src/common/ServiceException';

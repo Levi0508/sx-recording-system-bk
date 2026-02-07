@@ -5,7 +5,7 @@ import { RecordingSessionEntity } from './entities/recording-session.entity';
 import { RecordingChunkEntity } from './entities/recording-chunk.entity';
 import { CreateSessionDTO } from './dtos/create-session.dto';
 import { RecordingOssService } from './recording-oss.service';
-import { AnalysisTaskService } from './analysis-task.service';
+import { AnalysisTaskService } from '../analysis/analysis-task.service';
 
 @Injectable()
 export class RecordingService {
