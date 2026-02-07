@@ -65,9 +65,10 @@ export class RecordingService {
     chunks: {
       chunkId: number;
       objectKey: string;
-      size: number;
+      size?: number;
       duration: number;
     }[],
+    expectedChunkCount?: number,
   ) {
     let session = await this.sessionRepo.findOneBy({ sessionId });
     if (!session) {
@@ -81,6 +82,7 @@ export class RecordingService {
     session.useOss = 1;
     await this.sessionRepo.save(session);
 
+    // 1. 处理客户端上报的 chunks
     for (const c of chunks) {
       let chunk = await this.chunkRepo.findOneBy({
         sessionId,
@@ -102,9 +104,53 @@ export class RecordingService {
       } catch {
         chunk.status = 'pending';
       }
-      await this.chunkRepo.save(chunk);
+      try {
+        await this.chunkRepo.save(chunk);
+      } catch (e: any) {
+        if (e.code === 'ER_DUP_ENTRY' || e.message?.includes('Duplicate entry')) {
+          // ignore
+        } else {
+          throw e;
+        }
+      }
     }
-    return this.completeSession(sessionId);
+
+    // 2. 如果提供了期望总数，进行完整性校验（防遗漏）
+    if (typeof expectedChunkCount === 'number' && expectedChunkCount > 0) {
+      session.expectedChunkCount = expectedChunkCount;
+      await this.sessionRepo.save(session);
+
+      const uploadedChunks = await this.chunkRepo.find({
+        where: { sessionId, status: 'uploaded' },
+        select: ['chunkId'],
+      });
+      const uploadedIds = new Set(uploadedChunks.map((c) => c.chunkId));
+      const missingChunkIds: number[] = [];
+      // 前端分片 ID 从 0 开始（遵循 DB 规范），所以校验 0 到 expectedChunkCount - 1
+      for (let i = 0; i < expectedChunkCount; i++) {
+        if (!uploadedIds.has(i)) {
+          missingChunkIds.push(i);
+        }
+      }
+
+      if (missingChunkIds.length > 0) {
+        // 发现遗漏，不结束会话，返回缺失 ID
+        return {
+          ...session,
+          status: 'recording', // 保持 recording
+          allChunksUploaded: false,
+          missingChunkIds,
+        };
+      }
+    }
+
+    // 3. 校验通过或未开启校验，标记会话完成
+    const completedSession = await this.completeSession(sessionId);
+    return {
+      ...completedSession,
+      allChunksUploaded: true,
+      missingChunkIds: [],
+    };
   }
 
   /**
@@ -214,7 +260,15 @@ export class RecordingService {
       chunk.ossObjectKey = c.objectKey;
       chunk.duration = c.duration;
       chunk.status = 'uploaded';
-      await this.chunkRepo.save(chunk);
+      try {
+        await this.chunkRepo.save(chunk);
+      } catch (e: any) {
+        if (e.code === 'ER_DUP_ENTRY' || e.message?.includes('Duplicate entry')) {
+          // ignore
+        } else {
+          throw e;
+        }
+      }
     }
     const { sum } = await this.chunkRepo
       .createQueryBuilder('chunk')

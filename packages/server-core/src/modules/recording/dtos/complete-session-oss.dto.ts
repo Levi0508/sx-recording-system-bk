@@ -18,8 +18,9 @@ export class OssChunkItemDto {
   @IsString()
   objectKey!: string;
 
+  @IsOptional()
   @IsNumber()
-  size!: number;
+  size?: number;
 
   @IsNumber()
   duration!: number;
@@ -38,4 +39,9 @@ export class CompleteSessionOssDto {
   @ValidateNested({ each: true })
   @Type(() => OssChunkItemDto)
   chunks?: OssChunkItemDto[];
+
+  /** 本会话应有的分片总数（chunkId 从 0 到 expectedChunkCount-1），用于校验是否全部上传 */
+  @IsOptional()
+  @IsNumber()
+  expectedChunkCount?: number;
 }

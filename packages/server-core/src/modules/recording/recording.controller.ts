@@ -105,6 +105,7 @@ export class RecordingController extends BaseController {
             size: c.size,
             duration: c.duration,
           })),
+          dto.expectedChunkCount, // 透传期望分片总数
         );
         return this.success(result);
       } catch (e: any) {

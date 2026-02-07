@@ -17,7 +17,7 @@ export class TypeOrmOptionsFactory implements ITypeOrmOptionsFactory {
       autoLoadEntities: true, //自动加载实体
       synchronize: true, //是否在应用程序启动时自动创建数据库表结构
       logging: false, // 关闭 SQL 打印，需要时可改为 true 或 ['error', 'warn']
-      poolSize: 10, //指定在连接池中保持的连接数
+      poolSize: 40, //指定在连接池中保持的连接数，默认通常是 10，生产环境可设为 20-50
       connectorPackage: 'mysql2',
     };
 

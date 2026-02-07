@@ -4,6 +4,7 @@ import { Column, Entity, Index } from 'typeorm';
 @Entity({
   name: 'recording_chunk',
 })
+@Index(['sessionId', 'chunkId'], { unique: true })
 export class RecordingChunkEntity extends BaseEntity {
   @Column({
     name: 'session_id',

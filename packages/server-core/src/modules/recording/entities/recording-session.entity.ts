@@ -43,6 +43,14 @@ export class RecordingSessionEntity extends BaseEntity {
   })
   status?: string; // 'recording' | 'completed'
 
+  /** 期望的分片总数（客户端上报），用于完整性校验 */
+  @Column({
+    name: 'expected_chunk_count',
+    type: 'int',
+    nullable: true,
+  })
+  expectedChunkCount?: number;
+
   /** 是否使用 OSS 存储（recordings/companyId/userId/sessionId/） */
   @Column({
     name: 'use_oss',

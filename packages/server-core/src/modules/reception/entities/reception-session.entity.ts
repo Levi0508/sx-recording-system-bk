@@ -10,8 +10,22 @@ export class ReceptionSessionEntity extends BaseEntity {
   @Column({ name: 'staff_id', type: 'int', nullable: true })
   staffId?: number;
 
-  @Column({ name: 'agreement_type', type: 'varchar', length: 64, default: 'recording_privacy' })
+  @Column({
+    name: 'agreement_type',
+    type: 'varchar',
+    length: 64,
+    default: 'recording_privacy',
+  })
   agreementType?: string;
+
+  /** 协议版本号，用于追溯用户确认时看到的是哪一版（如 "1" / "1.0"） */
+  @Column({
+    name: 'agreement_version',
+    type: 'varchar',
+    length: 32,
+    nullable: true,
+  })
+  agreementVersion?: string;
 
   @Index('IDX_reception_session_token')
   @Column({ name: 'token', type: 'varchar', length: 128 })
