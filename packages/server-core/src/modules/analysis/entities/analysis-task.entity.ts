@@ -1,8 +1,11 @@
 import { BaseEntity } from 'src/base/BaseEntity';
 import { Column, Entity, Index } from 'typeorm';
 
+/** 通用任务状态 */
+export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
 @Entity({
-  name: 'recording_analysis_task', // 与旧表名一致，兼容已有数据；若 DB 有表前缀则实际表名为 prefix_recording_analysis_task
+  name: 'recording_analysis_task', // 与旧表名一致，若 DB 有表前缀则实际表名为 prefix_recording_analysis_task
 })
 @Index(['sessionId'], { unique: true })
 export class AnalysisTaskEntity extends BaseEntity {
@@ -13,39 +16,39 @@ export class AnalysisTaskEntity extends BaseEntity {
   })
   sessionId!: string;
 
-  /** pending | processing | completed | failed */
+  /** 转写（ASR）状态：Worker 首轮 / 二次转写 可据此展示 */
   @Column({
-    name: 'status',
+    name: 'transcript_status',
     type: 'varchar',
     length: 32,
     default: 'pending',
   })
-  status!: string;
+  transcriptStatus!: TaskStatus;
 
-  /** 分析逻辑版本号（如 "rules-v1.0.0+asr-v2"），用于合规追溯 */
+  /** 转写失败原因，failed 时写入 */
   @Column({
-    name: 'version',
-    type: 'varchar',
-    length: 64,
-    nullable: true,
-  })
-  version?: string;
-
-  /** 分析结果 JSON 在 OSS 的 objectKey，completed 时写入，接口按 key 拉取全量 */
-  @Column({
-    name: 'result_oss_key',
+    name: 'transcript_error_message',
     type: 'varchar',
     length: 512,
     nullable: true,
   })
-  resultOssKey?: string;
+  transcriptErrorMessage?: string;
 
-  /** 失败原因，failed 时写入 */
+  /** 智能体分析状态：Worker 首轮 / 二次分析 可据此展示 */
   @Column({
-    name: 'error_message',
+    name: 'analysis_status',
+    type: 'varchar',
+    length: 32,
+    default: 'pending',
+  })
+  analysisStatus!: TaskStatus;
+
+  /** 智能体分析失败原因，failed 时写入 */
+  @Column({
+    name: 'analysis_error_message',
     type: 'varchar',
     length: 512,
     nullable: true,
   })
-  errorMessage?: string;
+  analysisErrorMessage?: string;
 }

@@ -19,11 +19,13 @@ export interface PresignUploadResult {
   expiresAt: number;
 }
 
-/** OSS 路径 type：按类型区分，便于扩展 */
+/** OSS 路径 type：按类型区分，转写/分析一目了然 */
 export const OSS_RECORDING_TYPE = {
   audio: 'audio', // 录音分片
-  transcript: 'transcript', // ASR/分析结果（转写）
-  ai_translation: 'ai_translation', // 预留：AI 智能体翻译
+  transcript: 'transcript', // 转写结果（ASR 文本）
+  analysis: 'analysis', // 智能体分析结果（摘要、评分、风险等）
+  /** @deprecated 使用 analysis */
+  ai_translation: 'ai_translation',
 } as const;
 
 /**
@@ -142,16 +144,97 @@ export class RecordingOssService {
   }
 
   /**
-   * 服务端上传分析结果 JSON 到 OSS（方案 B：全量留档，DB 只存索引）
-   * 路径：recordings/{companyId}/{sessionId}/transcript/analysis_result.json
-   * @returns OSS objectKey，供 DB 存储及后续按 key 生成签名 URL 或拉取内容
+   * 转写结果 OSS 路径（按记录版本）：transcript/transcript_{recordId}.json
    */
+  getTranscriptRecordObjectKey(sessionId: string, recordId: number): string {
+    const companyId = this.config.get<string>('OSS_COMPANY_ID') || 'default';
+    return `recordings/${companyId}/${sessionId}/${OSS_RECORDING_TYPE.transcript}/transcript_${recordId}.json`;
+  }
+
+  /**
+   * 转写结果上传（按记录版本，可追溯）
+   */
+  async uploadTranscriptRecord(
+    sessionId: string,
+    recordId: number,
+    payload: {
+      full_transcript: string;
+      chunk_count: number;
+      processed_at: string;
+    },
+  ): Promise<string> {
+    const objectKey = this.getTranscriptRecordObjectKey(sessionId, recordId);
+    const body = Buffer.from(JSON.stringify(payload), 'utf-8');
+    const client = this.getClient();
+    await client.put(objectKey, body, {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+    return objectKey;
+  }
+
+  /**
+   * 智能体分析结果 OSS 路径（按记录版本）：analysis/analysis_result_{recordId}.json
+   */
+  getAnalysisResultRecordObjectKey(
+    sessionId: string,
+    recordId: number,
+  ): string {
+    const companyId = this.config.get<string>('OSS_COMPANY_ID') || 'default';
+    return `recordings/${companyId}/${sessionId}/${OSS_RECORDING_TYPE.analysis}/analysis_result_${recordId}.json`;
+  }
+
+  /**
+   * 智能体分析结果上传（按记录版本，可追溯）
+   */
+  async uploadAnalysisResultRecord(
+    sessionId: string,
+    recordId: number,
+    result: unknown,
+  ): Promise<string> {
+    const objectKey = this.getAnalysisResultRecordObjectKey(
+      sessionId,
+      recordId,
+    );
+    const body = Buffer.from(JSON.stringify(result), 'utf-8');
+    const client = this.getClient();
+    await client.put(objectKey, body, {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+    return objectKey;
+  }
+
+  /** @deprecated 使用 uploadTranscriptRecord + recordId */
+  async uploadTranscriptRaw(
+    sessionId: string,
+    payload: {
+      full_transcript: string;
+      chunk_count: number;
+      processed_at: string;
+    },
+  ): Promise<string> {
+    const companyId = this.config.get<string>('OSS_COMPANY_ID') || 'default';
+    const objectKey = `recordings/${companyId}/${sessionId}/${OSS_RECORDING_TYPE.transcript}/raw.json`;
+    const body = Buffer.from(JSON.stringify(payload), 'utf-8');
+    const client = this.getClient();
+    await client.put(objectKey, body, {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+    return objectKey;
+  }
+
+  /** @deprecated 使用 getTranscriptRecordObjectKey */
+  getTranscriptRawObjectKey(sessionId: string): string {
+    const companyId = this.config.get<string>('OSS_COMPANY_ID') || 'default';
+    return `recordings/${companyId}/${sessionId}/${OSS_RECORDING_TYPE.transcript}/raw.json`;
+  }
+
+  /** @deprecated 使用 uploadAnalysisResultRecord + recordId */
   async uploadAnalysisResult(
     sessionId: string,
     result: unknown,
   ): Promise<string> {
     const companyId = this.config.get<string>('OSS_COMPANY_ID') || 'default';
-    const objectKey = `recordings/${companyId}/${sessionId}/${OSS_RECORDING_TYPE.transcript}/analysis_result.json`;
+    const objectKey = `recordings/${companyId}/${sessionId}/${OSS_RECORDING_TYPE.analysis}/analysis_result.json`;
     const body = Buffer.from(JSON.stringify(result), 'utf-8');
     const client = this.getClient();
     await client.put(objectKey, body, {

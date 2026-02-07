@@ -8,6 +8,9 @@ import { ProtocolResource } from 'src/decorators/protocol-resource';
 import { RecordingService } from './recording.service';
 import { RecordingOssService } from './recording-oss.service';
 import { AnalysisTaskService } from '../analysis/analysis-task.service';
+import { AnalysisRecordService } from '../analysis/analysis-record.service';
+import { BailianService } from '../bailian/bailian.service';
+import { AsrService } from '../asr/asr.service';
 import { ReqUser } from 'src/decorators/req-user';
 import { UserEntity } from '../user/entities/user.entity';
 import { ServiceException } from 'src/common/ServiceException';
@@ -18,6 +21,9 @@ export class RecordingController extends BaseController {
     private readonly recordingService: RecordingService,
     private readonly recordingOssService: RecordingOssService,
     private readonly analysisTaskService: AnalysisTaskService,
+    private readonly analysisRecordService: AnalysisRecordService,
+    private readonly bailianService: BailianService,
+    private readonly asrService: AsrService,
   ) {
     super();
   }
@@ -185,30 +191,220 @@ export class RecordingController extends BaseController {
   }
 
   /**
-   * 某会话的分析任务状态与结果
-   * 方案 B：结果只存 OSS，按 result_oss_key 拉取全量
+   * 某会话的分析任务状态与最新结果
+   * 从 recording_analysis_record 取最新一条，联表 transcript_record 拉转写并合并
    */
   @Get('session/:sessionId/analysis')
   async getSessionAnalysis(@Param('sessionId') sessionId: string) {
     const task = await this.analysisTaskService.getBySessionId(sessionId);
     if (!task) {
-      return this.success({ status: null, result: null, errorMessage: null });
+      return this.success({
+        transcriptStatus: null,
+        analysisStatus: null,
+        result: null,
+        transcriptErrorMessage: null,
+        analysisErrorMessage: null,
+      });
     }
     let result: unknown = null;
-    if (task.resultOssKey) {
+    const latest =
+      await this.analysisRecordService.getLatestAnalysisRecordBySession(
+        sessionId,
+      );
+    if (latest?.resultOssKey && latest.transcriptRecord?.transcriptOssKey) {
       try {
         const buf = await this.recordingOssService.getObjectContent(
-          task.resultOssKey,
+          latest.resultOssKey,
         );
-        result = JSON.parse(buf.toString('utf-8'));
+        result = JSON.parse(buf.toString('utf-8')) as Record<string, unknown>;
+        const rawBuf = await this.recordingOssService.getObjectContent(
+          latest.transcriptRecord.transcriptOssKey,
+        );
+        const raw = JSON.parse(rawBuf.toString('utf-8')) as {
+          full_transcript?: string;
+        };
+        if (raw.full_transcript != null && typeof result === 'object') {
+          (result as Record<string, unknown>).full_transcript =
+            raw.full_transcript;
+          (result as Record<string, unknown>).transcript_preview =
+            raw.full_transcript.length > 100
+              ? raw.full_transcript.substring(0, 100) + '...'
+              : raw.full_transcript;
+        }
       } catch (e) {
-        console.warn('Fetch analysis result from OSS failed:', e);
+        console.warn('Fetch analysis/transcript from OSS failed:', e);
       }
     }
     return this.success({
-      status: task.status,
+      transcriptStatus: task.transcriptStatus,
+      analysisStatus: task.analysisStatus,
       result,
-      errorMessage: task.errorMessage ?? null,
+      transcriptErrorMessage: task.transcriptErrorMessage ?? null,
+      analysisErrorMessage: task.analysisErrorMessage ?? null,
+    });
+  }
+
+  /**
+   * 某会话的分析/转写历史（联表查所有版本，用于追责与对比）
+   */
+  @Get('session/:sessionId/analysis/history')
+  async getSessionAnalysisHistory(@Param('sessionId') sessionId: string) {
+    const list =
+      await this.analysisRecordService.listAnalysisHistoryBySession(sessionId);
+    const items = list.map((r) => ({
+      id: r.id,
+      sessionId: r.sessionId,
+      transcriptRecordId: r.transcriptRecordId,
+      triggerType: r.triggerType,
+      resultOssKey: r.resultOssKey,
+      transcriptOssKey: r.transcriptRecord?.transcriptOssKey,
+      createdAt: r.createdAt,
+    }));
+    return this.success({ list: items });
+  }
+
+  /**
+   * 二次分析：基于最新转写记录重新调用百炼分析，写入新 analysis_record 并更新任务状态
+   */
+  @Post('session/:sessionId/reanalyze')
+  async reanalyze(@Param('sessionId') sessionId: string) {
+    const task = await this.analysisTaskService.getBySessionId(sessionId);
+    if (!task) {
+      throw new ServiceException('无分析任务', 400);
+    }
+    if (task.analysisStatus === 'processing') {
+      throw new ServiceException('智能体分析进行中，请稍后再试', 400);
+    }
+    const transcriptRecord =
+      await this.analysisRecordService.getLatestTranscriptRecordBySession(
+        sessionId,
+      );
+    if (!transcriptRecord?.transcriptOssKey) {
+      throw new ServiceException('无转写结果，请先完成转写或进行二次转写', 400);
+    }
+    let rawBuf: Buffer;
+    try {
+      rawBuf = await this.recordingOssService.getObjectContent(
+        transcriptRecord.transcriptOssKey,
+      );
+    } catch (e: any) {
+      throw new ServiceException('读取转写文件失败', 400);
+    }
+    const raw = JSON.parse(rawBuf.toString('utf-8')) as {
+      full_transcript?: string;
+    };
+    const transcript = raw?.full_transcript;
+    if (typeof transcript !== 'string' || !transcript.trim()) {
+      throw new ServiceException('转写内容为空', 400);
+    }
+    const agentResult = await this.bailianService.analyze(transcript);
+    const result = {
+      step: 'analysis_complete',
+      summary: agentResult.summary ?? '',
+      score: agentResult.score ?? 0,
+      risk_flags: agentResult.risk_flags ?? [],
+      keywords: agentResult.keywords ?? [],
+      suggestion: agentResult.suggestion,
+      processed_at: new Date().toISOString(),
+      ...agentResult,
+    };
+    const analysisRecord =
+      await this.analysisRecordService.createAnalysisRecord(
+        sessionId,
+        transcriptRecord.id,
+        'reanalyze',
+      );
+    const resultOssKey =
+      await this.recordingOssService.uploadAnalysisResultRecord(
+        sessionId,
+        analysisRecord.id,
+        result,
+      );
+    await this.analysisRecordService.setAnalysisResultOssKey(
+      analysisRecord.id,
+      resultOssKey,
+    );
+    await this.analysisTaskService.completeTask(sessionId);
+    return this.success({ message: '二次分析完成' });
+  }
+
+  /**
+   * 二次转写：用该会话的录音分片重新 ASR，写入新 transcript_record；可选 reanalyze 同时写入 analysis_record
+   */
+  @Post('session/:sessionId/retranscribe')
+  async retranscribe(
+    @Param('sessionId') sessionId: string,
+    @ProtocolResource() resource: { reanalyze?: boolean },
+  ) {
+    const chunks = await this.recordingService.getChunksWithOssKey(sessionId);
+    if (!chunks?.length) {
+      throw new ServiceException('无录音分片', 400);
+    }
+    const audioUrls = chunks
+      .filter((c) => c.ossObjectKey)
+      .map((c) =>
+        this.recordingOssService.getSignUrlForPlay(c.ossObjectKey!, 3600),
+      );
+    if (audioUrls.length === 0) {
+      throw new ServiceException('无有效分片 OSS 地址', 400);
+    }
+    const transcript = await this.asrService.transcribe(audioUrls);
+    const transcriptRecord =
+      await this.analysisRecordService.createTranscriptRecord(
+        sessionId,
+        'retranscribe',
+      );
+    const transcriptOssKey =
+      await this.recordingOssService.uploadTranscriptRecord(
+        sessionId,
+        transcriptRecord.id,
+        {
+          full_transcript: transcript,
+          chunk_count: chunks.length,
+          processed_at: new Date().toISOString(),
+        },
+      );
+    await this.analysisRecordService.setTranscriptOssKey(
+      transcriptRecord.id,
+      transcriptOssKey,
+    );
+    const reanalyze =
+      resource?.reanalyze === true ||
+      (typeof (resource as any)?.reanalyze === 'string' &&
+        (resource as any).reanalyze === '1');
+    if (reanalyze) {
+      const agentResult = await this.bailianService.analyze(transcript);
+      const result = {
+        step: 'analysis_complete',
+        summary: agentResult.summary ?? '',
+        score: agentResult.score ?? 0,
+        risk_flags: agentResult.risk_flags ?? [],
+        keywords: agentResult.keywords ?? [],
+        suggestion: agentResult.suggestion,
+        processed_at: new Date().toISOString(),
+        ...agentResult,
+      };
+      const analysisRecord =
+        await this.analysisRecordService.createAnalysisRecord(
+          sessionId,
+          transcriptRecord.id,
+          'retranscribe_reanalyze',
+        );
+      const resultOssKey =
+        await this.recordingOssService.uploadAnalysisResultRecord(
+          sessionId,
+          analysisRecord.id,
+          result,
+        );
+      await this.analysisRecordService.setAnalysisResultOssKey(
+        analysisRecord.id,
+        resultOssKey,
+      );
+      await this.analysisTaskService.completeTask(sessionId);
+    }
+    return this.success({
+      message: '二次转写完成',
+      reanalyze: !!reanalyze,
     });
   }
 

@@ -10,24 +10,25 @@ process.on('unhandledRejection', (reason, p) => {
 
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './modules/app.module';
+import { TranscriptWorker } from './modules/analysis/transcript.worker';
 import { AnalysisWorker } from './modules/analysis/analysis.worker';
 
 console.log('[Worker] worker.ts 已加载，即将创建应用上下文...');
 
 async function bootstrap() {
   console.log('[Worker] 正在启动应用上下文...');
-  // 创建应用上下文（不启动 HTTP 监听），并开启控制台日志
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['log', 'error', 'warn', 'debug'],
   });
-  console.log('[Worker] 应用上下文已创建，获取 AnalysisWorker...');
+  console.log('[Worker] 应用上下文已创建，启动转写 Worker 与分析 Worker...');
 
-  const worker = app.get(AnalysisWorker);
-  console.log('[Worker] 进入任务循环（本进程将常驻，按 Ctrl+C 退出）');
-  // 启动 Worker 循环（会一直阻塞在这里）
-  await worker.start();
+  const transcriptWorker = app.get(TranscriptWorker);
+  const analysisWorker = app.get(AnalysisWorker);
+  console.log(
+    '[Worker] 转写/分析双 Worker 已启动（本进程常驻，按 Ctrl+C 退出）',
+  );
+  await Promise.all([transcriptWorker.start(), analysisWorker.start()]);
 
-  // 正常情况下不会执行到这里，除非 worker.stop() 被调用
   await app.close();
 }
 
