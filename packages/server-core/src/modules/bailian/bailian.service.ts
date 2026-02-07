@@ -38,7 +38,9 @@ export class BailianService {
       debug: {},
     };
 
-    this.logger.log(`Calling Bailian app ${appId}, transcript length: ${transcript.length}`);
+    this.logger.log(
+      `Calling Bailian app ${appId}, transcript length: ${transcript.length}`,
+    );
 
     const res = await fetch(url, {
       method: 'POST',
@@ -52,7 +54,9 @@ export class BailianService {
     if (!res.ok) {
       const errText = await res.text();
       this.logger.error(`Bailian API error: ${res.status} ${errText}`);
-      throw new Error(`Bailian API failed: ${res.status} ${errText.slice(0, 200)}`);
+      throw new Error(
+        `Bailian API failed: ${res.status} ${errText.slice(0, 200)}`,
+      );
     }
 
     const data = (await res.json()) as {
@@ -97,13 +101,16 @@ export class BailianService {
     }
   }
 
-  private normalizeAnalysisResult(parsed: Record<string, unknown>): Record<string, unknown> {
+  private normalizeAnalysisResult(
+    parsed: Record<string, unknown>,
+  ): Record<string, unknown> {
     return {
       summary: typeof parsed.summary === 'string' ? parsed.summary : '',
       score: typeof parsed.score === 'number' ? parsed.score : 0,
       risk_flags: Array.isArray(parsed.risk_flags) ? parsed.risk_flags : [],
       keywords: Array.isArray(parsed.keywords) ? parsed.keywords : [],
-      suggestion: typeof parsed.suggestion === 'string' ? parsed.suggestion : undefined,
+      suggestion:
+        typeof parsed.suggestion === 'string' ? parsed.suggestion : undefined,
       ...parsed,
     };
   }
