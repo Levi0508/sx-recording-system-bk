@@ -7,6 +7,7 @@ import { PresignUploadDto } from './dtos/presign-upload.dto';
 import { ProtocolResource } from 'src/decorators/protocol-resource';
 import { RecordingService } from './recording.service';
 import { RecordingOssService } from './recording-oss.service';
+import { AnalysisTaskService } from './analysis-task.service';
 import { ReqUser } from 'src/decorators/req-user';
 import { UserEntity } from '../user/entities/user.entity';
 import { ServiceException } from 'src/common/ServiceException';
@@ -16,6 +17,7 @@ export class RecordingController extends BaseController {
   constructor(
     private readonly recordingService: RecordingService,
     private readonly recordingOssService: RecordingOssService,
+    private readonly analysisTaskService: AnalysisTaskService,
   ) {
     super();
   }
@@ -180,6 +182,31 @@ export class RecordingController extends BaseController {
   async getUploadedChunks(@Param('sessionId') sessionId: string) {
     const chunkIds = await this.recordingService.getUploadedChunks(sessionId);
     return this.success(chunkIds);
+  }
+
+  /**
+   * 某会话的分析任务状态与结果
+   * 录音会话 complete 后自动创建分析任务（status=pending），后续由 Worker 消费并更新 status/result
+   */
+  @Get('session/:sessionId/analysis')
+  async getSessionAnalysis(@Param('sessionId') sessionId: string) {
+    const task = await this.analysisTaskService.getBySessionId(sessionId);
+    if (!task) {
+      return this.success({ status: null, result: null, errorMessage: null });
+    }
+    let result: unknown = null;
+    if (task.result && task.result.trim()) {
+      try {
+        result = JSON.parse(task.result);
+      } catch {
+        result = task.result;
+      }
+    }
+    return this.success({
+      status: task.status,
+      result,
+      errorMessage: task.errorMessage ?? null,
+    });
   }
 
   /**

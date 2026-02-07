@@ -5,6 +5,7 @@ import { RecordingSessionEntity } from './entities/recording-session.entity';
 import { RecordingChunkEntity } from './entities/recording-chunk.entity';
 import { CreateSessionDTO } from './dtos/create-session.dto';
 import { RecordingOssService } from './recording-oss.service';
+import { AnalysisTaskService } from './analysis-task.service';
 
 @Injectable()
 export class RecordingService {
@@ -14,6 +15,7 @@ export class RecordingService {
     @InjectRepository(RecordingChunkEntity)
     private readonly chunkRepo: Repository<RecordingChunkEntity>,
     private readonly recordingOssService: RecordingOssService,
+    private readonly analysisTaskService: AnalysisTaskService,
   ) {}
 
   /**
@@ -52,6 +54,7 @@ export class RecordingService {
 
       session.totalDuration = sum || 0;
       await this.sessionRepo.save(session);
+      await this.analysisTaskService.createTask(sessionId);
     }
     return session;
   }
@@ -107,7 +110,10 @@ export class RecordingService {
       try {
         await this.chunkRepo.save(chunk);
       } catch (e: any) {
-        if (e.code === 'ER_DUP_ENTRY' || e.message?.includes('Duplicate entry')) {
+        if (
+          e.code === 'ER_DUP_ENTRY' ||
+          e.message?.includes('Duplicate entry')
+        ) {
           // ignore
         } else {
           throw e;
@@ -263,7 +269,10 @@ export class RecordingService {
       try {
         await this.chunkRepo.save(chunk);
       } catch (e: any) {
-        if (e.code === 'ER_DUP_ENTRY' || e.message?.includes('Duplicate entry')) {
+        if (
+          e.code === 'ER_DUP_ENTRY' ||
+          e.message?.includes('Duplicate entry')
+        ) {
           // ignore
         } else {
           throw e;
