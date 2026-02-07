@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RecordingSessionEntity } from './entities/recording-session.entity';
@@ -15,6 +15,7 @@ export class RecordingService {
     @InjectRepository(RecordingChunkEntity)
     private readonly chunkRepo: Repository<RecordingChunkEntity>,
     private readonly recordingOssService: RecordingOssService,
+    @Inject(forwardRef(() => AnalysisTaskService))
     private readonly analysisTaskService: AnalysisTaskService,
   ) {}
 

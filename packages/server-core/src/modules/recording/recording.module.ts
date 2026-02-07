@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RecordingSessionEntity } from './entities/recording-session.entity';
 import { RecordingChunkEntity } from './entities/recording-chunk.entity';
@@ -10,10 +10,10 @@ import { AnalysisModule } from '../analysis/analysis.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([RecordingSessionEntity, RecordingChunkEntity]),
-    AnalysisModule,
+    forwardRef(() => AnalysisModule),
   ],
   controllers: [RecordingController],
   providers: [RecordingService, RecordingOssService],
-  exports: [RecordingService],
+  exports: [RecordingService, RecordingOssService],
 })
 export class RecordingModule {}
