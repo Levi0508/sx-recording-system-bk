@@ -31,13 +31,14 @@ export class AnalysisTaskEntity extends BaseEntity {
   })
   version?: string;
 
-  /** 分析结果（JSON 或摘要），completed 时写入 */
+  /** 分析结果 JSON 在 OSS 的 objectKey，completed 时写入，接口按 key 拉取全量 */
   @Column({
-    name: 'result',
-    type: 'text',
+    name: 'result_oss_key',
+    type: 'varchar',
+    length: 512,
     nullable: true,
   })
-  result?: string;
+  resultOssKey?: string;
 
   /** 失败原因，failed 时写入 */
   @Column({

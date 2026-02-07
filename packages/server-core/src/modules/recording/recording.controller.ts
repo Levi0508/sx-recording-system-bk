@@ -186,7 +186,7 @@ export class RecordingController extends BaseController {
 
   /**
    * 某会话的分析任务状态与结果
-   * 录音会话 complete 后自动创建分析任务（status=pending），后续由 Worker 消费并更新 status/result
+   * 方案 B：结果只存 OSS，按 result_oss_key 拉取全量
    */
   @Get('session/:sessionId/analysis')
   async getSessionAnalysis(@Param('sessionId') sessionId: string) {
@@ -195,11 +195,14 @@ export class RecordingController extends BaseController {
       return this.success({ status: null, result: null, errorMessage: null });
     }
     let result: unknown = null;
-    if (task.result && task.result.trim()) {
+    if (task.resultOssKey) {
       try {
-        result = JSON.parse(task.result);
-      } catch {
-        result = task.result;
+        const buf = await this.recordingOssService.getObjectContent(
+          task.resultOssKey,
+        );
+        result = JSON.parse(buf.toString('utf-8'));
+      } catch (e) {
+        console.warn('Fetch analysis result from OSS failed:', e);
       }
     }
     return this.success({

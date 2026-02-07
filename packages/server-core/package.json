@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@af-charizard/sdk-types": "workspace:*",
+    "@alicloud/pop-core": "^1.8.0",
     "@kazura/nestjs-redis": "^0.0.2",
     "@kazura/nestjs-winston": "^0.0.2",
     "@nestjs/common": "^10.3.8",

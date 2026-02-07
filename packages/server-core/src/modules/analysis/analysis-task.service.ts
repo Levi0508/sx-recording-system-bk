@@ -11,11 +11,12 @@ export class AnalysisTaskService {
   ) {}
 
   private getTableName(): string {
-    const prefix = (this.taskRepo.manager.connection.options as any).entityPrefix ?? '';
+    const prefix =
+      (this.taskRepo.manager.connection.options as any).entityPrefix ?? '';
     return `${prefix}recording_analysis_task`;
   }
 
-  /** Worker 启动时调用：若表不存在则创建（幂等） */
+  /** Worker 启动时调用：若表不存在则创建（幂等），结果只存 result_oss_key */
   async ensureTableExists(): Promise<void> {
     const tableName = this.getTableName();
     await this.taskRepo.manager.query(`
@@ -27,7 +28,7 @@ export class AnalysisTaskService {
         session_id VARCHAR(64) NOT NULL,
         status VARCHAR(32) NOT NULL DEFAULT 'pending',
         version VARCHAR(64) NULL,
-        result TEXT NULL,
+        result_oss_key VARCHAR(512) NULL,
         error_message VARCHAR(512) NULL,
         UNIQUE KEY uk_session_id (session_id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -52,9 +53,7 @@ export class AnalysisTaskService {
   /**
    * 按会话 ID 查询分析任务状态与结果
    */
-  async getBySessionId(
-    sessionId: string,
-  ): Promise<AnalysisTaskEntity | null> {
+  async getBySessionId(sessionId: string): Promise<AnalysisTaskEntity | null> {
     return this.taskRepo.findOneBy({ sessionId });
   }
 
@@ -67,14 +66,16 @@ export class AnalysisTaskService {
       // 1. 查找一个 pending 任务并锁定行（跳过已被锁定的）
       const tableName = this.getTableName();
       const tasks = await manager.query(
-        `SELECT * FROM \`${tableName}\` WHERE status = 'pending' AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`
+        `SELECT * FROM \`${tableName}\` WHERE status = 'pending' AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`,
       );
 
       if (tasks.length === 0) return null;
       const taskRaw = tasks[0];
-      
+
       // 获取实体以进行后续操作
-      const task = await manager.findOneBy(AnalysisTaskEntity, { id: taskRaw.id });
+      const task = await manager.findOneBy(AnalysisTaskEntity, {
+        id: taskRaw.id,
+      });
       if (!task) return null;
 
       // 2. 标记为 processing 并更新时间
@@ -86,17 +87,17 @@ export class AnalysisTaskService {
   }
 
   /**
-   * 完成任务：写入结果与版本号
+   * 完成任务：结果已存 OSS，只写 result_oss_key 与版本号（方案 B）
    */
   async completeTask(
     sessionId: string,
-    result: any,
+    resultOssKey: string,
     version: string,
   ): Promise<void> {
     const task = await this.taskRepo.findOneBy({ sessionId });
     if (task) {
       task.status = 'completed';
-      task.result = JSON.stringify(result);
+      task.resultOssKey = resultOssKey;
       task.version = version;
       task.errorMessage = undefined;
       await this.taskRepo.save(task);
@@ -104,13 +105,14 @@ export class AnalysisTaskService {
   }
 
   /**
-   * 标记任务失败
+   * 标记任务失败（error_message 截断至 500 字符，避免超出 varchar(512)）
    */
   async failTask(sessionId: string, error: string): Promise<void> {
     const task = await this.taskRepo.findOneBy({ sessionId });
     if (task) {
       task.status = 'failed';
-      task.errorMessage = error;
+      task.errorMessage =
+        error && error.length > 500 ? error.slice(0, 497) + '...' : error;
       await this.taskRepo.save(task);
     }
   }

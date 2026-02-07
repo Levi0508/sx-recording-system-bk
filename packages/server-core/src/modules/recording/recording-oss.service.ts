@@ -19,9 +19,16 @@ export interface PresignUploadResult {
   expiresAt: number;
 }
 
+/** OSS 路径 type：按类型区分，便于扩展 */
+export const OSS_RECORDING_TYPE = {
+  audio: 'audio', // 录音分片
+  transcript: 'transcript', // ASR/分析结果（转写）
+  ai_translation: 'ai_translation', // 预留：AI 智能体翻译
+} as const;
+
 /**
  * 录音文件 OSS 直传：生成预签名 PUT URL，路径规范
- * /recordings/{companyId}/{userId}/{sessionId}/chunk_{chunkId}.m4a
+ * /recordings/{companyId}/{sessionId}/{type}/...
  *
  * 配置来源：在「运行 server-core 时的当前工作目录」下的 env/.env.local 中配置环境变量。
  * 若在 packages/server-core 下执行 pnpm start:dev，则配置文件为 packages/server-core/env/.env.local。
@@ -57,7 +64,7 @@ export class RecordingOssService {
 
   /**
    * 生成单个分片的预签名 PUT URL
-   * 路径：recordings/{companyId}/{sessionId}/chunk_{chunkId}.m4a（不包含 userId）
+   * 路径：recordings/{companyId}/{sessionId}/audio/chunk_{chunkId}.m4a
    * @param _userId 保留参数，兼容 controller 调用，未参与路径
    * @param sessionId 录音会话 ID
    * @param chunkId 分片序号
@@ -70,7 +77,7 @@ export class RecordingOssService {
     expires: number = 900,
   ): PresignUploadResult {
     const companyId = this.config.get<string>('OSS_COMPANY_ID') || 'default';
-    const objectKey = `recordings/${companyId}/${sessionId}/chunk_${chunkId}.m4a`;
+    const objectKey = `recordings/${companyId}/${sessionId}/${OSS_RECORDING_TYPE.audio}/chunk_${chunkId}.m4a`;
     const client = this.getClient();
     const putUrl = client.signatureUrl(objectKey, {
       method: 'PUT',
@@ -125,13 +132,43 @@ export class RecordingOssService {
   /**
    * 生成 OSS 对象的临时读（播放）URL
    * 用于 Explore 例音播放、下载等需要临时访问私有对象的场景
-   * @param objectKey OSS 对象键（如 recordings/default/{sessionId}/chunk_1.m4a）
+   * @param objectKey OSS 对象键（如 recordings/default/{sessionId}/audio/chunk_1.m4a）
    * @param expires 链接有效期（秒），默认 3600（1 小时）
    * @returns 带签名的 GET URL，前端可直接用于 Audio 播放或下载
    */
   getSignUrlForPlay(objectKey: string, expires: number = 3600): string {
     const client = this.getClient();
     return client.signatureUrl(objectKey, { method: 'GET', expires });
+  }
+
+  /**
+   * 服务端上传分析结果 JSON 到 OSS（方案 B：全量留档，DB 只存索引）
+   * 路径：recordings/{companyId}/{sessionId}/transcript/analysis_result.json
+   * @returns OSS objectKey，供 DB 存储及后续按 key 生成签名 URL 或拉取内容
+   */
+  async uploadAnalysisResult(
+    sessionId: string,
+    result: unknown,
+  ): Promise<string> {
+    const companyId = this.config.get<string>('OSS_COMPANY_ID') || 'default';
+    const objectKey = `recordings/${companyId}/${sessionId}/${OSS_RECORDING_TYPE.transcript}/analysis_result.json`;
+    const body = Buffer.from(JSON.stringify(result), 'utf-8');
+    const client = this.getClient();
+    await client.put(objectKey, body, {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+    return objectKey;
+  }
+
+  /**
+   * 根据 objectKey 拉取 OSS 对象内容（用于接口返回完整分析结果）
+   */
+  async getObjectContent(objectKey: string): Promise<Buffer> {
+    const client = this.getClient();
+    const result = await client.get(objectKey);
+    const content = result.content;
+    if (content == null) throw new Error(`OSS object empty: ${objectKey}`);
+    return Buffer.isBuffer(content) ? content : Buffer.from(content);
   }
 
   /** 获取 OSS 配置（前端直传时可选：bucket、region、pathPrefix 用于展示或 STS 模式） */

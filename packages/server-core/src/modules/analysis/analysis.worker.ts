@@ -79,14 +79,18 @@ export class AnalysisWorker {
       // 2. 执行分析逻辑
       const result = await this.runAnalysis(task.sessionId);
 
-      // 3. 完成并写入结果
-      await this.analysisTaskService.completeTask(
+      // 3. 方案 B：结果 JSON 存 OSS，DB 只存 result_oss_key
+      const resultOssKey = await this.recordingOssService.uploadAnalysisResult(
         task.sessionId,
         result,
+      );
+      await this.analysisTaskService.completeTask(
+        task.sessionId,
+        resultOssKey,
         this.ANALYSIS_VERSION,
       );
       this.logger.log(`Task ${task.id} completed.`);
-      console.log(`[Worker] 任务 id=${task.id} 已完成，结果已写入数据库`);
+      console.log(`[Worker] 任务 id=${task.id} 已完成，结果已写入 OSS`);
     } catch (e: any) {
       this.logger.error(`Task ${task.id} failed:`, e);
       console.error(`[Worker] 任务 id=${task.id} 失败:`, e?.message || e);
