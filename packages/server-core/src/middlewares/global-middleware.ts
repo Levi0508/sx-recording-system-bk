@@ -1,3 +1,4 @@
+/// <reference path="../declarations/express.d.ts" />
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
 import { Protocol } from 'src/dtos/protocol-dto';

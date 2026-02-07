@@ -2,10 +2,7 @@ import { BaseEntity } from 'src/base/BaseEntity';
 import { Column, Entity, Index } from 'typeorm';
 
 @Entity({
-  name: 'analysis_task', // 表名也建议改一下，去掉 recording_ 前缀，或者为了兼容旧数据保持原名？为了彻底解耦，建议叫 analysis_task，但这里我先保持表名不变以免影响已有数据，或者您确认要改表名？
-  // 用户说“单独搞一个module”，通常意味着业务逻辑分离。表名如果还没上线，建议改成 analysis_task。
-  // 鉴于之前刚创建表，且用户说“开始Worker吧”，可能还没积压重要数据。
-  // 但为了稳妥，我把表名设为 'analysis_task'。如果需要迁移数据请告知。
+  name: 'recording_analysis_task', // 与旧表名一致，兼容已有数据；若 DB 有表前缀则实际表名为 prefix_recording_analysis_task
 })
 @Index(['sessionId'], { unique: true })
 export class AnalysisTaskEntity extends BaseEntity {

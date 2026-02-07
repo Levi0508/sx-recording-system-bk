@@ -10,6 +10,30 @@ export class AnalysisTaskService {
     private readonly taskRepo: Repository<AnalysisTaskEntity>,
   ) {}
 
+  private getTableName(): string {
+    const prefix = (this.taskRepo.manager.connection.options as any).entityPrefix ?? '';
+    return `${prefix}recording_analysis_task`;
+  }
+
+  /** Worker 启动时调用：若表不存在则创建（幂等） */
+  async ensureTableExists(): Promise<void> {
+    const tableName = this.getTableName();
+    await this.taskRepo.manager.query(`
+      CREATE TABLE IF NOT EXISTS \`${tableName}\` (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        created_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3),
+        updated_at DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+        deleted_at DATETIME(3) NULL,
+        session_id VARCHAR(64) NOT NULL,
+        status VARCHAR(32) NOT NULL DEFAULT 'pending',
+        version VARCHAR(64) NULL,
+        result TEXT NULL,
+        error_message VARCHAR(512) NULL,
+        UNIQUE KEY uk_session_id (session_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    `);
+  }
+
   /**
    * 为已完成录音的会话创建分析任务（幂等：已存在则直接返回）
    */
@@ -41,8 +65,9 @@ export class AnalysisTaskService {
   async fetchOnePendingAndLock(): Promise<AnalysisTaskEntity | null> {
     return this.taskRepo.manager.transaction(async (manager) => {
       // 1. 查找一个 pending 任务并锁定行（跳过已被锁定的）
+      const tableName = this.getTableName();
       const tasks = await manager.query(
-        `SELECT * FROM analysis_task WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`
+        `SELECT * FROM \`${tableName}\` WHERE status = 'pending' AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED`
       );
 
       if (tasks.length === 0) return null;

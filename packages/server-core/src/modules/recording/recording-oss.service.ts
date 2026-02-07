@@ -1,3 +1,4 @@
+/// <reference path="../../declarations/ali-oss.d.ts" />
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as AliOSS from 'ali-oss';
